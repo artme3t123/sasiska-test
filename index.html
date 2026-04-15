@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skolas E-klase Demo</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --card: #ffffff;
+      --primary: #2f6fed;
+      --ok: #1f9d55;
+      --warn: #d97706;
+      --bad: #dc2626;
+      --text: #1f2937;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 20px auto;
+      padding: 0 14px;
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.08);
+    }
+
+    h1 {
+      margin: 0;
+      padding: 16px 14px 0;
+      text-align: center;
+      font-size: 1.4rem;
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 1.1rem;
+    }
+
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    input, select, button {
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: .95rem;
+    }
+
+    input, select { flex: 1; min-width: 120px; }
+
+    button {
+      background: var(--primary);
+      color: white;
+      cursor: pointer;
+      border: none;
+    }
+
+    button.secondary { background: #64748b; }
+    button.warn { background: var(--warn); }
+
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 10px;
+      background: #e0e7ff;
+      min-height: 42px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: .9rem;
+    }
+
+    th, td {
+      padding: 8px;
+      border-bottom: 1px solid #e5e7eb;
+      text-align: left;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: .8rem;
+      color: #fff;
+    }
+
+    .in { background: var(--ok); }
+    .out { background: var(--warn); }
+    .absent { background: var(--bad); }
+
+    .muted { color: #6b7280; font-size: .86rem; }
+  </style>
+</head>
+<body>
+  <h1>🎓 Skolas piekļuves + kavējumu uzskaite (demo)</h1>
+
+  <div class="container">
+    <section class="card">
+      <h2>1) Skenera logs</h2>
+      <p class="muted">Ievadi kartes ID (piem.: <b>CARD-1001</b>) un nospied “Skenēt”.</p>
+      <div class="row">
+        <input id="cardInput" placeholder="Kartes ID" />
+        <button id="scanBtn">Skenēt</button>
+      </div>
+      <div class="status" id="scanStatus">Nav skenējumu.</div>
+
+      <h3>Atzīmēt kavējumu</h3>
+      <div class="row">
+        <select id="studentSelect"></select>
+        <input id="absenceReason" placeholder="Iemesls (piem. slimo)" />
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button class="warn" id="markAbsentBtn">Pievienot kavējumu</button>
+        <button class="secondary" id="resetBtn">Notīrīt demo datus</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>2) Ieejas žurnāls</h2>
+      <table>
+        <thead>
+          <tr><th>Laiks</th><th>Skolēns</th><th>Klase</th><th>Statuss</th></tr>
+        </thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card" style="grid-column: 1 / -1;">
+      <h2>3) Administrācijas panelis</h2>
+      <table>
+        <thead>
+          <tr><th>Skolēns</th><th>Klase</th><th>Karte</th><th>Pēdējais statuss</th><th>Kavējumi</th></tr>
+        </thead>
+        <tbody id="adminBody"></tbody>
+      </table>
+      <p class="muted">Visi dati glabājas tikai pārlūkā (localStorage), jo šis ir skolas projekta demo.</p>
+    </section>
+  </div>
+
+<script>
+  const STORAGE_KEY = "school_demo_v1";
+
+  const initialStudents = [
+    { id: 1, name: "Anna Ozola", className: "8A", cardId: "CARD-1001", absences: [] },
+    { id: 2, name: "Mārtiņš Kalns", className: "8A", cardId: "CARD-1002", absences: [] },
+    { id: 3, name: "Laura Bērziņa", className: "9B", cardId: "CARD-1003", absences: [] },
+    { id: 4, name: "Jānis Liepa", className: "9B", cardId: "CARD-1004", absences: [] }
+  ];
+
+  const state = loadState();
+
+  const cardInput = document.getElementById("cardInput");
+  const scanBtn = document.getElementById("scanBtn");
+  const scanStatus = document.getElementById("scanStatus");
+  const logBody = document.getElementById("logBody");
+  const adminBody = document.getElementById("adminBody");
+  const studentSelect = document.getElementById("studentSelect");
+  const absenceReason = document.getElementById("absenceReason");
+  const markAbsentBtn = document.getElementById("markAbsentBtn");
+  const resetBtn = document.getElementById("resetBtn");
+
+  function loadState() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+    return {
+      students: initialStudents,
+      logs: []
+    };
+  }
+
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }
+
+  function fmt(ts) {
+    return new Date(ts).toLocaleString();
+  }
+
+  function renderStudentSelect() {
+    studentSelect.innerHTML = "";
+    state.students.forEach(s => {
+      const option = document.createElement("option");
+      option.value = s.id;
+      option.textContent = `${s.name} (${s.className})`;
+      studentSelect.appendChild(option);
+    });
+  }
+
+  function renderLogs() {
+    logBody.innerHTML = "";
+    [...state.logs].reverse().slice(0, 20).forEach(log => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${fmt(log.time)}</td>
+        <td>${log.studentName}</td>
+        <td>${log.className}</td>
+        <td><span class="pill ${log.type === "entry" ? "in" : "out"}">${log.type === "entry" ? "Ienāca" : "Izgāja"}</span></td>
+      `;
+      logBody.appendChild(tr);
+    });
+  }
+
+  function lastStatus(student) {
+    const log = [...state.logs].reverse().find(l => l.studentId === student.id);
+    if (!log) return "Nav datu";
+    return log.type === "entry" ? "Skolā" : "Ārpus skolas";
+  }
+
+  function renderAdmin() {
+    adminBody.innerHTML = "";
+    state.students.forEach(s => {
+      const tr = document.createElement("tr");
+      const absCount = s.absences.length;
+      tr.innerHTML = `
+        <td>${s.name}</td>
+        <td>${s.className}</td>
+        <td>${s.cardId}</td>
+        <td>${lastStatus(s)}</td>
+        <td>${absCount} ${absCount > 0 ? '<span class="pill absent">kavējumi</span>' : ''}</td>
+      `;
+      adminBody.appendChild(tr);
+    });
+  }
+
+  function render() {
+    renderStudentSelect();
+    renderLogs();
+    renderAdmin();
+  }
+
+  function scanCard() {
+    const card = cardInput.value.trim().toUpperCase();
+    if (!card) return;
+
+    const student = state.students.find(s => s.cardId === card);
+    if (!student) {
+      scanStatus.textContent = `❌ Karte ${card} nav atrasta sistēmā.`;
+      scanStatus.style.background = "#fee2e2";
+      return;
+    }
+
+    const studentLogs = state.logs.filter(l => l.studentId === student.id);
+    const nextType = studentLogs.length && studentLogs[studentLogs.length - 1].type === "entry" ? "exit" : "entry";
+
+    state.logs.push({
+      studentId: student.id,
+      studentName: student.name,
+      className: student.className,
+      type: nextType,
+      time: Date.now()
+    });
+
+    scanStatus.textContent = `✅ ${student.name}: ${nextType === "entry" ? "ienāca skolā" : "izgāja no skolas"}.`;
+    scanStatus.style.background = "#dcfce7";
+
+    cardInput.value = "";
+    saveState();
+    render();
+  }
+
+  function markAbsent() {
+    const studentId = Number(studentSelect.value);
+    const student = state.students.find(s => s.id === studentId);
+    if (!student) return;
+
+    student.absences.push({
+      date: new Date().toISOString().slice(0, 10),
+      reason: absenceReason.value.trim() || "Nav norādīts"
+    });
+
+    absenceReason.value = "";
+    scanStatus.textContent = `⚠️ ${student.name} pievienots kavējums.`;
+    scanStatus.style.background = "#fef3c7";
+
+    saveState();
+    render();
+  }
+
+  function resetData() {
+    localStorage.removeItem(STORAGE_KEY);
+    location.reload();
+  }
+
+  scanBtn.addEventListener("click", scanCard);
+  cardInput.addEventListener("keydown", (e) => { if (e.key === "Enter") scanCard(); });
+  markAbsentBtn.addEventListener("click", markAbsent);
+  resetBtn.addEventListener("click", resetData);
+
+  render();
+</script>
+</body>
+</html>
